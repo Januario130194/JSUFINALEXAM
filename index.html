@@ -1,0 +1,643 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>University Scheduler - Shared (Google Sheets) Edition</title>
+
+  <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+
+  <style>
+    :root { --primary:#2c3e50; --accent:#3498db; --bg:#f4f7f6; --success:#27ae60; --warning:#e74c3c; }
+    body { font-family:'Segoe UI',sans-serif; margin:20px; background:var(--bg); color:#333; }
+    .container { max-width:1200px; margin:auto; background:#fff; padding:25px; border-radius:12px; box-shadow:0 5px 25px rgba(0,0,0,0.1); }
+
+    .input-section { background:#f8f9fa; padding:20px; border-radius:8px; margin-bottom:25px; border:1px solid #ddd; }
+    .form-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(130px, 1fr)); gap:15px; }
+    .input-group { display:flex; flex-direction:column; gap:3px; }
+    label { font-size:0.7rem; font-weight:bold; color:#666; text-transform:uppercase; }
+    input, select { padding:8px; border:1px solid #ccc; border-radius:4px; font-size:0.85rem; }
+    select[multiple] { height:110px; }
+
+    .btn { padding:10px 15px; border:none; border-radius:4px; font-weight:bold; cursor:pointer; color:#fff; transition:0.2s; }
+    .btn-add { background:var(--success); }
+    .btn-update { background:var(--accent); display:none; }
+
+    #listSnapshotArea, #gridSnapshotArea { background:#fff; padding:15px; border-radius:8px; border:1px solid #eee; margin-bottom:30px; }
+
+    .list-table { width:100%; border-collapse:collapse; font-size:0.85rem; }
+    .list-table th { background:#eee; padding:12px; text-align:left; border-bottom:2px solid #ddd; }
+    .list-table td { padding:12px; border-bottom:1px solid #eee; }
+
+    .calendar-title { text-align:center; background:var(--primary); color:#fff; margin:0; padding:15px; border-radius:8px 8px 0 0; }
+    .grid-table { width:100%; border-collapse:collapse; table-layout:fixed; }
+    .grid-table th { background:#ecf0f1; padding:12px; border:1px solid #bdc3c7; font-size:0.8rem; }
+    .grid-table td { border:1px solid #ddd; height:110px; text-align:center; padding:8px; vertical-align:top; }
+    .time-col { background:#f9f9f9; font-weight:bold; width:120px; font-size:0.75rem; vertical-align:middle !important; }
+
+    .class-entry { background:#e8f6f3; border:1px solid #27ae60; border-radius:4px; padding:8px; font-size:0.75rem; margin-bottom:6px; box-shadow:0 2px 4px rgba(0,0,0,0.05); }
+    .program-tag { font-weight:800; color:#e67e22; font-size:0.65rem; background:#fff3e0; padding:2px 6px; border-radius:2px; display:inline-block; margin-bottom:4px; }
+    .initials-badge { background:#2c3e50; color:#fff; border-radius:10px; padding:2px 8px; font-size:0.65rem; font-weight:bold; margin-top:8px; display:inline-block; }
+
+    .export-btns { display:flex; gap:10px; justify-content:center; margin-top:20px; flex-wrap:wrap; }
+    .status-msg { font-size:0.8rem; color:var(--success); font-weight:bold; margin-left:10px; }
+
+    .filter-bar { display:flex; gap:10px; align-items:center; justify-content:center; padding:12px 10px; border:1px solid #eee; border-top:none; background:#fff; flex-wrap:wrap; }
+    .filter-bar select { min-width:180px; border-radius:6px; font-size:0.9rem; }
+
+    .muted-note { font-size:0.72rem; color:#777; margin-top:4px; }
+    #customTimeWrap { display:none; }
+
+    .cloud-banner { font-size:0.78rem; padding:8px 12px; border-radius:6px; margin-bottom:18px; background:#eaf4fb; border:1px solid #cfe6f7; color:#2c3e50; }
+  </style>
+</head>
+
+<body onload="loadFromCloud()">
+  <div class="container">
+    <h2>JSU Class Scheduler <span id="saveStatus" class="status-msg"></span></h2>
+
+    <div class="cloud-banner" id="cloudBanner">
+      Shared schedule (Google Sheets). Everyone editing this link works on the same data.
+    </div>
+
+    <div class="input-section">
+      <input type="hidden" id="edit-id" />
+      <div class="form-grid">
+        <div class="input-group">
+          <label>Class Name</label>
+          <input type="text" id="className" />
+        </div>
+
+        <div class="input-group">
+          <label>Lecturer Name</label>
+          <input type="text" id="lecturer" />
+        </div>
+
+        <div class="input-group">
+          <label>Program(s)</label>
+          <select id="program" multiple>
+            <option value="FP">FP</option>
+            <option value="GS">GS</option>
+
+            <option value="SLS 1">SLS 1</option>
+            <option value="SLS 2">SLS 2</option>
+            <option value="SLS 3">SLS 3</option>
+
+            <option value="SEB 1">SEB 1</option>
+            <option value="SEB 2">SEB 2</option>
+            <option value="SEB 3">SEB 3</option>
+
+            <option value="SAUP 1">SAUP 1</option>
+            <option value="SAUP 2">SAUP 2</option>
+            <option value="SAUP 3">SAUP 3</option>
+
+            <option value="SASE 1">SASE 1</option>
+            <option value="SASE 2">SASE 2</option>
+            <option value="SASE 3">SASE 3</option>
+          </select>
+        </div>
+
+        <div class="input-group">
+          <label>Room</label>
+          <input type="text" id="room" />
+        </div>
+
+        <div class="input-group">
+          <label>Day 1</label>
+          <select id="day1">
+            <option>Monday</option>
+            <option>Tuesday</option>
+            <option>Wednesday</option>
+            <option>Thursday</option>
+            <option>Friday</option>
+          </select>
+        </div>
+
+        <div class="input-group">
+          <label>Day 2</label>
+          <select id="day2">
+            <option value="None">None</option>
+            <option>Monday</option>
+            <option>Tuesday</option>
+            <option>Wednesday</option>
+            <option>Thursday</option>
+            <option>Friday</option>
+          </select>
+        </div>
+
+        <div class="input-group">
+          <label>Time Mode</label>
+          <select id="timeMode" onchange="toggleTimeMode()">
+            <option value="preset">Preset Slot</option>
+            <option value="custom">Custom Time</option>
+          </select>
+        </div>
+
+        <div class="input-group" id="presetTimeWrap">
+          <label>Preset Time Slot</label>
+          <select id="timeSlot">
+            <option value="08:00-10:00">08:00 – 10:00</option>
+            <option value="10:00-12:00">10:00 – 12:00</option>
+            <option value="13:00-15:00">13:00 – 15:00</option>
+            <option value="15:00-17:00">15:00 – 17:00</option>
+          </select>
+        </div>
+
+        <div class="input-group" id="customTimeWrap">
+          <label>Custom Time Slot</label>
+          <input type="text" id="customTime" placeholder="e.g. 09:00-11:00" />
+          <div class="muted-note">Use 24-hour format: HH:MM-HH:MM</div>
+        </div>
+
+        <div class="input-group" style="justify-content:flex-end;">
+          <button id="add-btn" class="btn btn-add" onclick="saveClass()">Add Class</button>
+          <button id="update-btn" class="btn btn-update" onclick="saveClass()">Update Class</button>
+          <button id="cancel-btn" class="btn" style="background:#95a5a6; display:none; margin-top:5px;" onclick="clearInputs()">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="listSnapshotArea">
+      <h3>Class Detail List</h3>
+      <table class="list-table" id="listTable">
+        <thead>
+          <tr>
+            <th>Class</th>
+            <th>Lecturer</th>
+            <th>Initials</th>
+            <th>Programs</th>
+            <th>Room</th>
+            <th>Days</th>
+            <th>Time</th>
+            <th class="no-snapshot">Actions</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <div id="gridSnapshotArea">
+      <h3 class="calendar-title">Sem 1-2026 Weekly Schedule</h3>
+
+      <div class="filter-bar">
+        <select id="gridProgramFilter" onchange="renderUI()">
+          <option value="ALL">All Programs</option>
+          <option value="FP">FP</option>
+          <option value="GS">GS</option>
+          <option value="SLS">SLS</option>
+          <option value="SEB">SEB</option>
+          <option value="SAUP">SAUP</option>
+          <option value="SASE">SASE</option>
+        </select>
+      </div>
+
+      <table class="grid-table" id="calendarGrid">
+        <thead id="calendarHead"></thead>
+        <tbody id="calendarBody"></tbody>
+      </table>
+    </div>
+
+    <div class="export-btns">
+      <button onclick="refreshNow()" class="btn" style="background:#3498db">🔄 Refresh Now</button>
+      <button onclick="downloadPNG('gridSnapshotArea','Weekly_Grid.png')" class="btn" style="background:#e67e22">📷 Save Grid PNG</button>
+      <button onclick="downloadPNG('listSnapshotArea','Detail_List.png')" class="btn" style="background:#e67e22">📷 Save List PNG</button>
+      <button onclick="downloadExcel()" class="btn" style="background:#27ae60">📥 Export Excel</button>
+      <button onclick="clearAllData()" class="btn" style="background:var(--warning)">🗑 Wipe All Data</button>
+    </div>
+  </div>
+
+  <script>
+    /* =========================================================
+       PASTE YOUR GOOGLE APPS SCRIPT WEB APP URL BELOW.
+       It looks like: https://script.google.com/macros/s/AKfyc..../exec
+    ========================================================= */
+    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycby3-3PylCNRlHPy3mDNH8XutG6WlBCRA7dKHHQvXj09K2Y3Kq2-V8xilchxzMxdwwUh1A/exec";
+
+    let courses = [];
+    const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
+
+    /* ---------- status helper ---------- */
+    let statusTimer = null;
+    function showStatus(msg, persist) {
+      const s = document.getElementById("saveStatus");
+      s.textContent = msg;
+      if (statusTimer) clearTimeout(statusTimer);
+      if (!persist) {
+        statusTimer = setTimeout(() => (s.textContent = ""), 2500);
+      }
+    }
+
+    /* ---------- Google Sheets API layer ---------- */
+    async function apiGet() {
+      const res = await fetch(SCRIPT_URL, { method: "GET" });
+      if (!res.ok) throw new Error("GET failed: " + res.status);
+      return await res.json();
+    }
+
+    // Content-Type defaults to text/plain for a string body, which avoids
+    // a CORS preflight request that Apps Script does not handle.
+    async function apiPost(payload) {
+      const res = await fetch(SCRIPT_URL, {
+        method: "POST",
+        body: JSON.stringify(payload)
+      });
+      if (!res.ok) throw new Error("POST failed: " + res.status);
+      return await res.json();
+    }
+
+    async function refreshCourses() {
+      const data = await apiGet();
+      if (Array.isArray(data)) courses = data;
+    }
+
+    /* ---------- load + auto-refresh ---------- */
+    async function loadFromCloud() {
+      toggleTimeMode();
+
+      if (SCRIPT_URL === "PASTE_YOUR_WEB_APP_URL_HERE") {
+        document.getElementById("cloudBanner").innerHTML =
+          "⚠️ Not connected yet. Paste your Google Apps Script Web App URL into the SCRIPT_URL line in the code.";
+        document.getElementById("cloudBanner").style.background = "#fdecea";
+        document.getElementById("cloudBanner").style.borderColor = "#f5c6cb";
+        renderUI();
+        return;
+      }
+
+      showStatus("Loading…", true);
+      try {
+        await refreshCourses();
+        showStatus("✓ Loaded");
+      } catch (e) {
+        console.error(e);
+        showStatus("⚠️ Could not load from Google Sheets");
+      }
+      renderUI();
+
+      // Poll for other people's changes every 20 seconds.
+      setInterval(async () => {
+        try {
+          await refreshCourses();
+          renderUI();
+        } catch (e) {
+          console.error("Auto-refresh failed", e);
+        }
+      }, 20000);
+    }
+
+    async function refreshNow() {
+      showStatus("Refreshing…", true);
+      try {
+        await refreshCourses();
+        renderUI();
+        showStatus("✓ Up to date");
+      } catch (e) {
+        console.error(e);
+        showStatus("⚠️ Refresh failed");
+      }
+    }
+
+    async function clearAllData() {
+      if (!confirm("This will permanently delete the ENTIRE shared list for everyone. Proceed?")) return;
+      showStatus("Clearing…", true);
+      try {
+        await apiPost({ action: "clear" });
+        courses = [];
+        renderUI();
+        showStatus("✓ Cleared");
+      } catch (e) {
+        console.error(e);
+        showStatus("⚠️ Clear failed");
+      }
+    }
+
+    /* ---------- helpers (unchanged logic) ---------- */
+    function getInitials(name) {
+      if (!name) return "??";
+      const capitals = name.match(/[A-Z]/g);
+      return capitals ? capitals.join("") : name[0].toUpperCase();
+    }
+
+    function normalizeProgram(p) {
+      return (p || "").trim().toUpperCase();
+    }
+
+    function matchesGridFilter(course, filter) {
+      if (!filter || filter === "ALL") return true;
+      const progs = (course.programs || []).map(normalizeProgram);
+      if (filter === "FP" || filter === "GS") return progs.includes(filter);
+      if (filter === "SLS") return progs.some(p => p === "SLS 1" || p === "SLS 2" || p === "SLS 3");
+      if (filter === "SEB") return progs.some(p => p === "SEB 1" || p === "SEB 2" || p === "SEB 3");
+      if (filter === "SAUP") return progs.some(p => p === "SAUP 1" || p === "SAUP 2" || p === "SAUP 3");
+      if (filter === "SASE") return progs.some(p => p === "SASE 1" || p === "SASE 2" || p === "SASE 3");
+      return false;
+    }
+
+    function toggleTimeMode() {
+      const mode = document.getElementById("timeMode").value;
+      document.getElementById("presetTimeWrap").style.display = mode === "preset" ? "flex" : "none";
+      document.getElementById("customTimeWrap").style.display = mode === "custom" ? "flex" : "none";
+    }
+
+    function timeToMinutes(t) {
+      const [h, m] = t.split(":").map(Number);
+      return h * 60 + m;
+    }
+
+    function parseTimeSlot(slot) {
+      const parts = slot.split("-");
+      if (parts.length !== 2) return null;
+      return { start: parts[0].trim(), end: parts[1].trim() };
+    }
+
+    function isValidTimeSlot(slot) {
+      const regex = /^([01]\d|2[0-3]):([0-5]\d)-([01]\d|2[0-3]):([0-5]\d)$/;
+      if (!regex.test(slot)) return false;
+      const parsed = parseTimeSlot(slot);
+      if (!parsed) return false;
+      return timeToMinutes(parsed.end) > timeToMinutes(parsed.start);
+    }
+
+    function getChosenSlot() {
+      const mode = document.getElementById("timeMode").value;
+      if (mode === "custom") return document.getElementById("customTime").value.trim();
+      return document.getElementById("timeSlot").value.trim();
+    }
+
+    function timeSlotsOverlap(slotA, slotB) {
+      const a = parseTimeSlot(slotA);
+      const b = parseTimeSlot(slotB);
+      if (!a || !b) return false;
+      const aStart = timeToMinutes(a.start), aEnd = timeToMinutes(a.end);
+      const bStart = timeToMinutes(b.start), bEnd = timeToMinutes(b.end);
+      return aStart < bEnd && bStart < aEnd;
+    }
+
+    function getOverlappingPrograms(programsA, programsB) {
+      const a = (programsA || []).map(normalizeProgram);
+      const b = (programsB || []).map(normalizeProgram);
+      return a.filter(p => b.includes(p));
+    }
+
+    /* ---------- save (now async + re-checks latest data) ---------- */
+    async function saveClass() {
+      const id = document.getElementById("edit-id").value || Date.now().toString();
+      const name = document.getElementById("className").value.trim();
+      const lecturer = document.getElementById("lecturer").value.trim();
+      const room = document.getElementById("room").value.trim();
+      const slot = getChosenSlot();
+
+      const progSel = document.getElementById("program");
+      const programs = Array.from(progSel.selectedOptions).map(o => o.value);
+
+      const day1 = document.getElementById("day1").value;
+      const day2 = document.getElementById("day2").value;
+      const days = [day1];
+      if (day2 !== "None" && day2 !== day1) days.push(day2);
+
+      if (!name || !lecturer || !room || programs.length === 0 || !slot) {
+        return alert("Please fill in all details.");
+      }
+      if (!isValidTimeSlot(slot)) {
+        return alert("Invalid time format. Use HH:MM-HH:MM, for example 09:00-11:00");
+      }
+
+      // Pull the freshest data first so conflict checks are accurate even
+      // if someone else just added a class.
+      showStatus("Checking…", true);
+      try {
+        await refreshCourses();
+      } catch (e) {
+        console.error(e);
+        if (!confirm("Could not verify latest data from Google Sheets. Save anyway?")) {
+          showStatus("");
+          return;
+        }
+      }
+
+      const conflict = courses.find(ex => {
+        if (ex.id === id) return false;
+        const sameDay = days.some(d => (ex.days || []).includes(d));
+        const overlapTime = timeSlotsOverlap(ex.slot, slot);
+        if (sameDay && overlapTime) {
+          if ((ex.room || "").toLowerCase() === room.toLowerCase()) {
+            alert(`CONFLICT: Room ${room} overlaps with "${ex.name}" on the same day and time.`);
+            return true;
+          }
+          if ((ex.lecturer || "").toLowerCase() === lecturer.toLowerCase()) {
+            alert(`CONFLICT: ${lecturer} is already teaching "${ex.name}" during an overlapping time.`);
+            return true;
+          }
+          const overlapPrograms = getOverlappingPrograms(ex.programs, programs);
+          if (overlapPrograms.length > 0) {
+            alert(`CONFLICT: Program ${overlapPrograms.join(", ")} overlaps with "${ex.name}" on the same day and time.`);
+            return true;
+          }
+        }
+        return false;
+      });
+
+      if (conflict) { showStatus(""); return; }
+
+      const data = { id, name, lecturer, initials: getInitials(lecturer), programs, room, days, slot };
+
+      // Optimistic local update
+      const idx = courses.findIndex(c => c.id === id);
+      if (idx > -1) courses[idx] = data; else courses.push(data);
+      renderUI();
+      clearInputs();
+
+      // Persist to Google Sheets
+      showStatus("Saving…", true);
+      try {
+        await apiPost({ action: "save", course: data });
+        showStatus("✓ Saved");
+      } catch (e) {
+        console.error(e);
+        showStatus("⚠️ Save failed — refreshing");
+        await refreshNow();
+      }
+    }
+
+    function getSortedSlots() {
+      const unique = [...new Set(courses.map(c => c.slot).filter(Boolean))];
+      unique.sort((a, b) => {
+        const pa = parseTimeSlot(a), pb = parseTimeSlot(b);
+        if (!pa || !pb) return a.localeCompare(b);
+        const diff = timeToMinutes(pa.start) - timeToMinutes(pb.start);
+        if (diff !== 0) return diff;
+        return timeToMinutes(pa.end) - timeToMinutes(pb.end);
+      });
+      return unique;
+    }
+
+    function buildDynamicGrid() {
+      const head = document.getElementById("calendarHead");
+      const body = document.getElementById("calendarBody");
+      const slots = getSortedSlots();
+
+      head.innerHTML = `
+        <tr>
+          <th class="time-col">Time</th>
+          ${DAYS.map(day => `<th>${day}</th>`).join("")}
+        </tr>
+      `;
+
+      if (slots.length === 0) {
+        body.innerHTML = `
+          <tr>
+            <td class="time-col">No Time</td>
+            <td colspan="${DAYS.length}" style="padding:20px; text-align:center; color:#777;">
+              No classes added yet.
+            </td>
+          </tr>
+        `;
+        return;
+      }
+
+      body.innerHTML = slots.map(slot => `
+        <tr>
+          <td class="time-col">${slot}</td>
+          ${DAYS.map(day => `<td id="${day}-${slot}"></td>`).join("")}
+        </tr>
+      `).join("");
+    }
+
+    function renderUI() {
+      const tbody = document.querySelector("#listTable tbody");
+      tbody.innerHTML = "";
+
+      courses.forEach(c => {
+        tbody.innerHTML += `
+          <tr>
+            <td><strong>${c.name}</strong></td>
+            <td>${c.lecturer}</td>
+            <td style="font-weight:bold">${c.initials}</td>
+            <td>${(c.programs || []).join(", ")}</td>
+            <td>${c.room}</td>
+            <td>${(c.days || []).join("/")}</td>
+            <td>${c.slot}</td>
+            <td class="no-snapshot">
+              <button class="btn" style="background:#f39c12; padding:4px 8px; font-size:0.7rem;" onclick="editClass('${c.id}')">Edit</button>
+              <button class="btn" style="background:var(--warning); padding:4px 8px; font-size:0.7rem;" onclick="deleteClass('${c.id}')">Del</button>
+            </td>
+          </tr>
+        `;
+      });
+
+      buildDynamicGrid();
+
+      const filter = document.getElementById("gridProgramFilter")?.value || "ALL";
+
+      courses
+        .filter(c => matchesGridFilter(c, filter))
+        .forEach(c => {
+          (c.days || []).forEach(day => {
+            const cell = document.getElementById(`${day}-${c.slot}`);
+            if (!cell) return;
+            cell.innerHTML += `
+              <div class="class-entry">
+                <div class="program-tag">${(c.programs || []).join(" + ")}</div>
+                <div style="font-weight:bold; margin-bottom:2px;">${c.name}</div>
+                <div>Room: ${c.room}</div>
+                <div class="initials-badge">${c.initials}</div>
+              </div>
+            `;
+          });
+        });
+    }
+
+    function editClass(id) {
+      const c = courses.find(course => course.id === id);
+      if (!c) return;
+
+      document.getElementById("edit-id").value = c.id;
+      document.getElementById("className").value = c.name;
+      document.getElementById("lecturer").value = c.lecturer;
+      document.getElementById("room").value = c.room;
+      document.getElementById("day1").value = c.days[0];
+      document.getElementById("day2").value = c.days[1] || "None";
+
+      const defaultSlots = ["08:00-10:00", "10:00-12:00", "13:00-15:00", "15:00-17:00"];
+      if (defaultSlots.includes(c.slot)) {
+        document.getElementById("timeMode").value = "preset";
+        document.getElementById("timeSlot").value = c.slot;
+        document.getElementById("customTime").value = "";
+      } else {
+        document.getElementById("timeMode").value = "custom";
+        document.getElementById("customTime").value = c.slot;
+      }
+      toggleTimeMode();
+
+      const ps = document.getElementById("program");
+      Array.from(ps.options).forEach(o => { o.selected = (c.programs || []).includes(o.value); });
+
+      document.getElementById("add-btn").style.display = "none";
+      document.getElementById("update-btn").style.display = "block";
+      document.getElementById("cancel-btn").style.display = "block";
+      window.scrollTo(0, 0);
+    }
+
+    async function deleteClass(id) {
+      if (!confirm("Remove this class for everyone?")) return;
+      courses = courses.filter(c => c.id !== id);
+      renderUI();
+      showStatus("Deleting…", true);
+      try {
+        await apiPost({ action: "delete", id: id });
+        showStatus("✓ Deleted");
+      } catch (e) {
+        console.error(e);
+        showStatus("⚠️ Delete failed — refreshing");
+        await refreshNow();
+      }
+    }
+
+    function clearInputs() {
+      document.getElementById("edit-id").value = "";
+      document.getElementById("className").value = "";
+      document.getElementById("lecturer").value = "";
+      document.getElementById("room").value = "";
+      document.getElementById("program").selectedIndex = -1;
+      document.getElementById("day1").selectedIndex = 0;
+      document.getElementById("day2").value = "None";
+      document.getElementById("timeMode").value = "preset";
+      document.getElementById("timeSlot").selectedIndex = 0;
+      document.getElementById("customTime").value = "";
+      toggleTimeMode();
+
+      document.getElementById("add-btn").style.display = "block";
+      document.getElementById("update-btn").style.display = "none";
+      document.getElementById("cancel-btn").style.display = "none";
+    }
+
+    async function downloadPNG(containerId, fileName) {
+      const area = document.getElementById(containerId);
+      const hide = area.querySelectorAll(".no-snapshot");
+      hide.forEach(el => (el.style.visibility = "hidden"));
+      const canv = await html2canvas(area, { scale: 2 });
+      const link = document.createElement("a");
+      link.href = canv.toDataURL();
+      link.download = fileName;
+      link.click();
+      hide.forEach(el => (el.style.visibility = "visible"));
+    }
+
+    function downloadExcel() {
+      const wsData = courses.map(c => ({
+        Class: c.name,
+        Lecturer: c.lecturer,
+        Initials: c.initials,
+        Programs: (c.programs || []).join(", "),
+        Room: c.room,
+        Days: (c.days || []).join("/"),
+        Time: c.slot
+      }));
+      const ws = XLSX.utils.json_to_sheet(wsData);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Master_Schedule");
+      XLSX.writeFile(wb, "University_Schedule.xlsx");
+    }
+  </script>
+</body>
+</html>
