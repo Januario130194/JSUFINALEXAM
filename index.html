@@ -333,6 +333,11 @@
       return (p || "").trim().toUpperCase();
     }
 
+    // Force any value (including numbers from the sheet) to a safe lowercase string.
+    function asText(v) {
+      return (v === null || v === undefined ? "" : String(v)).toLowerCase();
+    }
+
     function matchesGridFilter(course, filter) {
       if (!filter || filter === "ALL") return true;
       const progs = (course.programs || []).map(normalizeProgram);
@@ -421,11 +426,11 @@
         const sameDay = days.some(d => (ex.days || []).includes(d));
         const overlapTime = timeSlotsOverlap(ex.slot, slot);
         if (sameDay && overlapTime) {
-          if ((ex.room || "").toLowerCase() === room.toLowerCase()) {
+          if (asText(ex.room) === asText(room)) {
             alert(`CONFLICT: Room ${room} overlaps with "${ex.name}" on the same day and time.`);
             return true;
           }
-          if ((ex.lecturer || "").toLowerCase() === lecturer.toLowerCase()) {
+          if (asText(ex.lecturer) === asText(lecturer)) {
             alert(`CONFLICT: ${lecturer} is already teaching "${ex.name}" during an overlapping time.`);
             return true;
           }
