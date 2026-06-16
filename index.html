@@ -228,9 +228,20 @@
       }
     }
 
+    /* ---------- fetch with timeout (prevents infinite hangs) ---------- */
+    async function fetchWithTimeout(url, options, ms) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), ms || 12000);
+      try {
+        return await fetch(url, { ...options, signal: controller.signal });
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+
     /* ---------- Google Sheets API layer ---------- */
     async function apiGet() {
-      const res = await fetch(SCRIPT_URL, { method: "GET" });
+      const res = await fetchWithTimeout(SCRIPT_URL, { method: "GET" }, 12000);
       if (!res.ok) throw new Error("GET failed: " + res.status);
       return await res.json();
     }
@@ -238,10 +249,10 @@
     // Content-Type defaults to text/plain for a string body, which avoids
     // a CORS preflight request that Apps Script does not handle.
     async function apiPost(payload) {
-      const res = await fetch(SCRIPT_URL, {
+      const res = await fetchWithTimeout(SCRIPT_URL, {
         method: "POST",
         body: JSON.stringify(payload)
-      });
+      }, 12000);
       if (!res.ok) throw new Error("POST failed: " + res.status);
       return await res.json();
     }
@@ -379,7 +390,7 @@
       return a.filter(p => b.includes(p));
     }
 
-    /* ---------- save (now async + re-checks latest data) ---------- */
+    /* ---------- save (fast: checks in-memory data, no extra round-trip) ---------- */
     async function saveClass() {
       const id = document.getElementById("edit-id").value || Date.now().toString();
       const name = document.getElementById("className").value.trim();
@@ -402,19 +413,9 @@
         return alert("Invalid time format. Use HH:MM-HH:MM, for example 09:00-11:00");
       }
 
-      // Pull the freshest data first so conflict checks are accurate even
-      // if someone else just added a class.
-      showStatus("Checking…", true);
-      try {
-        await refreshCourses();
-      } catch (e) {
-        console.error(e);
-        if (!confirm("Could not verify latest data from Google Sheets. Save anyway?")) {
-          showStatus("");
-          return;
-        }
-      }
-
+      // Conflict check against the data already loaded (kept fresh by the
+      // 20-second auto-refresh). No blocking network call here, so saving
+      // is fast and never hangs on a "Checking…" step.
       const conflict = courses.find(ex => {
         if (ex.id === id) return false;
         const sameDay = days.some(d => (ex.days || []).includes(d));
@@ -454,7 +455,7 @@
         showStatus("✓ Saved");
       } catch (e) {
         console.error(e);
-        showStatus("⚠️ Save failed — refreshing");
+        showStatus("⚠️ Save failed — check connection & try again");
         await refreshNow();
       }
     }
